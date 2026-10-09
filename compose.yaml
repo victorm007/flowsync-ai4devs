@@ -1,0 +1,69 @@
+# FlowSync — bases de datos PostgreSQL 17 (con pgvector) para desarrollo y pruebas.
+#
+# Se levantan con `make db-up`, que espera a que los dos servicios estén sanos.
+#
+# Puertos fuera del 5432 a propósito: si alguien tiene ya un PostgreSQL propio
+# escuchando ahí, el choque daría un error que no menciona a Docker. Se publican
+# solo en 127.0.0.1: son bases locales con credenciales de juguete.
+#
+# Las credenciales son solo de desarrollo local y tienen que coincidir con
+# backend/.env (desarrollo) y backend/.env.test (pruebas).
+
+# Comprobación de salud común. Va por TCP (`-h 127.0.0.1`) y no por el socket
+# Unix a propósito: la primera vez que arranca, la imagen crea la base con un
+# servidor temporal que solo escucha en el socket, y luego lo reinicia. Un
+# `pg_isready` por socket daría «sano» en ese hueco y quien conectase justo
+# entonces se encontraría la conexión rechazada.
+x-healthcheck: &healthcheck
+  test:
+    [
+      "CMD-SHELL",
+      'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"',
+    ]
+  interval: 2s
+  timeout: 5s
+  retries: 30
+  start_period: 10s
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: flowsync
+      POSTGRES_PASSWORD: flowsync
+      POSTGRES_DB: flowsync_dev
+    ports:
+      - "127.0.0.1:54410:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck: *healthcheck
+
+  db-test:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: flowsync
+      POSTGRES_PASSWORD: flowsync
+      POSTGRES_DB: flowsync_test
+    ports:
+      - "127.0.0.1:54411:5432"
+    # Efímera a propósito: el directorio de datos vive en memoria y no hay
+    # volumen, así que cada arranque empieza de cero. El tmpfs tapa el VOLUME
+    # que declara la imagen en esa ruta; sin él, Docker crearía un volumen
+    # anónimo y los datos sobrevivirían a un `restart`.
+    tmpfs:
+      - /var/lib/postgresql/data
+    # Durabilidad desactivada: si el contenedor cae, los datos se pierden igual.
+    command:
+      [
+        "postgres",
+        "-c",
+        "fsync=off",
+        "-c",
+        "synchronous_commit=off",
+        "-c",
+        "full_page_writes=off",
+      ]
+    healthcheck: *healthcheck
+
+volumes:
+  db-data:

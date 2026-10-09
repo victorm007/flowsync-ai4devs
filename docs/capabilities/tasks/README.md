@@ -108,17 +108,18 @@ empiezan por «La interfaz SHALL…».
 
 ### Preparar el backend
 
+Desde la raíz del repo (necesita Docker arrancado):
+
 ```bash
-cd backend
-npm install
-cp .env.example .env && node ace generate:key   # solo la primera vez
-node ace migration:run                          # crea tmp/db.sqlite3
+make setup      # dependencias, .env, APP_KEY, levanta PostgreSQL y migra las dos bases
+make db-up      # en sesiones siguientes: levanta las bases y espera a que estén sanas
 ```
 
 ### Tests automáticos
 
 ```bash
-node ace test                                   # todo
+make test                                       # desde la raíz: migra la base de pruebas y corre todo
+node ace test                                   # todo (con la base de pruebas ya migrada)
 node ace test functional                        # solo la suite functional
 node ace test --files=assignee                  # un fichero
 node ace test --tests="el responsable llega con su nombre y sus iniciales"
@@ -132,11 +133,12 @@ señal de que la capability cumpla su spec.
 
 Dos cosas que hay que saber antes de escribir un test aquí:
 
-- La suite functional pega contra **el mismo fichero SQLite que el servidor de desarrollo**:
-  [`config/database.ts`](../../../backend/config/database.ts) declara una sola conexión sin override
-  por entorno. Aísla siempre con `testUtils.db().withGlobalTransaction()` en un `group.each.setup`,
-  como hacen los tests existentes. **No** uses truncate: se llevaría por delante los datos con los que
-  estés trabajando.
+- La suite pega contra **su propia base**, el servicio `db-test` de
+  [`compose.yaml`](../../../compose.yaml) (puerto 54411, en memoria): `backend/.env.test`, que
+  AdonisJS solo carga con `NODE_ENV=test`, cambia el puerto y el nombre de la base. Esa base se
+  vacía cada vez que el contenedor se reinicia, pero **no** entre runs: aísla igualmente con
+  `testUtils.db().withGlobalTransaction()` en un `group.each.setup`, como hacen los tests
+  existentes, para que un test no herede lo que dejó otro.
 - Un test por scenario, citando el requisito en la cabecera del fichero. Es lo que permite leer la
   spec y saber qué falta.
 
